@@ -27,6 +27,7 @@ Source repo (../newsletters/)     Build script              GitHub Pages
 - **Client-side rendering**: `index.json` manifest is loaded once, then all navigation/search is client-side. No server needed.
 - **Iframe email viewer**: Original HTML emails are loaded in sandboxed iframes to prevent CSS conflicts and preserve original formatting.
 - **Repo root deployment**: Built files go directly to repo root (not `dist/`). The entire repo is deployed as a static site via GitHub Pages.
+- **Git LFS for emails**: The 13,652 HTML email files (~883 MB) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
 
 ## File Structure
 

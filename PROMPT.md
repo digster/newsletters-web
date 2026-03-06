@@ -15,3 +15,7 @@ why am i getting this error?
 ok, remove the enablement option.
 
 Implement the plan.
+
+## 2026-03-06: Migrate Email Files to Git LFS
+
+Migrate the 13,652 HTML email files (~883 MB) from regular git objects to Git LFS. Full history rewrite (only 3 commits, single branch). Update CI workflow with LFS checkout + caching. Update README with LFS prerequisite. Update ARCHITECTURE.md with LFS decision.

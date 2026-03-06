@@ -23,6 +23,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      # Cache LFS objects to avoid re-downloading ~883 MB each deploy
+      - name: Cache LFS objects
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('.gitattributes') }}
+          restore-keys: lfs-
+
+      - name: LFS Pull
+        run: git lfs pull
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

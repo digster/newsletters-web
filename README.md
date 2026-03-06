@@ -8,6 +8,17 @@ A browsable GitHub Pages site for ~14,000 newsletter emails across 65+ sources.
 - **Build script**: `scripts/build_site.py` reads the source repo, extracts metadata from YAML front matter in `.md` files, copies `.html` email files, and generates a JSON manifest
 - **Static site**: Pure HTML/CSS/JS with no build tools or frameworks. Client-side JS loads the manifest and renders navigation
 
+## Prerequisites
+
+- **Git LFS** is required. Email files (~883 MB) are stored with Git LFS.
+
+```bash
+git lfs install   # one-time setup
+git clone <repo>  # LFS files are pulled automatically
+```
+
+If you already cloned without LFS, run `git lfs pull` to fetch the email files.
+
 ## Local Development
 
 ### Build the site
