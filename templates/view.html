@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Newsletter Archive</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="viewer-header">
+    <div class="container container--wide viewer-header__inner">
+      <div class="viewer-nav">
+        <a href="index.html" class="viewer-nav__btn" id="back-link" title="Back to list">&#8592;</a>
+        <a href="#" class="viewer-nav__btn" id="prev-btn" title="Previous email" aria-disabled="true">&#8593;</a>
+        <a href="#" class="viewer-nav__btn" id="next-btn" title="Next email" aria-disabled="true">&#8595;</a>
+      </div>
+      <div class="viewer-meta">
+        <div class="viewer-meta__subject" id="viewer-subject">Loading...</div>
+        <div class="viewer-meta__date" id="viewer-date"></div>
+      </div>
+      <!-- Spacer to balance the nav buttons -->
+      <div style="width: 104px;"></div>
+    </div>
+  </header>
+
+  <iframe class="viewer-frame" id="email-frame" sandbox="allow-same-origin" title="Email content"></iframe>
+
+  <script src="app.js"></script>
+  <script>
+    App.initViewer();
+  </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Newsletter Archive</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container header__inner">
+      <div class="header__title">
+        <a href="index.html">Newsletter Archive</a>
+        <span class="header__breadcrumb" id="breadcrumb"></span>
+      </div>
+      <div class="header__stats" id="email-count"></div>
+    </div>
+  </header>
+
+  <main class="container">
+    <div class="search-wrap">
+      <input
+        type="text"
+        class="search-input"
+        id="search"
+        placeholder="Search email subjects... (press / to focus)"
+        autocomplete="off"
+        spellcheck="false"
+      >
+    </div>
+
+    <div class="email-list" id="email-list">
+      <div class="loading">Loading...</div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+  <script>
+    App.initNewsletter();
+    App.initKeyboard();
+  </script>
+</body>
+</html>
