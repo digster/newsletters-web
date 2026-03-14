@@ -24,7 +24,7 @@ If you already cloned without LFS, run `git lfs pull` to fetch the email files.
 ### Build the site
 
 ```bash
-# From the newsletters-github directory
+# From the newsletters-web directory
 python scripts/build_site.py
 ```
 

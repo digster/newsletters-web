@@ -7,6 +7,7 @@ from .md files for metadata, copies .html email files, generates a JSON manifest
 and copies template files into the repo root for GitHub Pages deployment.
 """
 
+import argparse
 import json
 import logging
 import os
@@ -234,22 +235,40 @@ def write_nojekyll(output_dir: Path):
 
 
 def main():
+    # --- CLI argument parsing ---
+    parser = argparse.ArgumentParser(
+        description="Build the Newsletter Archive GitHub Pages site.",
+    )
+    parser.add_argument(
+        "input_dir",
+        nargs="?",
+        default=str(SOURCE_DIR),
+        help=(
+            "Path to the newsletters source directory "
+            f"(default: {SOURCE_DIR})"
+        ),
+    )
+    args = parser.parse_args()
+
+    # Resolve the input directory to an absolute path
+    source_dir = Path(args.input_dir).resolve()
+
     log.info("=" * 60)
     log.info("Newsletter Archive — Site Builder")
     log.info("=" * 60)
 
     # Validate source directory
-    if not SOURCE_DIR.exists():
-        log.error("Source directory not found: %s", SOURCE_DIR)
+    if not source_dir.exists():
+        log.error("Source directory not found: %s", source_dir)
         log.error("Expected the newsletters source repo at ../newsletters/")
         sys.exit(1)
 
-    log.info("Source: %s", SOURCE_DIR)
+    log.info("Source: %s", source_dir)
     log.info("Output: %s", REPO_ROOT)
 
     # Step 1: Collect email metadata
     log.info("\n--- Collecting email metadata ---")
-    emails = collect_emails(SOURCE_DIR)
+    emails = collect_emails(source_dir)
     log.info("Found %d emails total", len(emails))
 
     # Step 2: Build and write manifest
@@ -264,7 +283,7 @@ def main():
 
     # Step 3: Copy HTML email files
     log.info("\n--- Copying HTML email files ---")
-    copy_html_emails(SOURCE_DIR, OUTPUT_EMAILS)
+    copy_html_emails(source_dir, OUTPUT_EMAILS)
 
     # Step 4: Copy templates to repo root
     log.info("\n--- Copying templates ---")

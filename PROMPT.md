@@ -31,3 +31,7 @@ Implement client-side read tracking and bookmarks using localStorage. Store modu
 ## 2026-03-07: Inline Action Buttons on Email List Rows
 
 Add interactive bookmark and read/unread toggle buttons directly on each email list row (newsletter page and bookmarks page). Buttons appear trailing on the right side of each row. Uses event delegation for efficiency with large lists. Clicking buttons toggles state without navigating to the email viewer.
+
+## 2026-03-13: Add Input Directory CLI Argument to build_site.py
+
+Add a CLI argument to `build_site.py` so the source newsletters directory can be specified at runtime instead of being hardcoded. Uses argparse with a positional optional argument (`nargs="?"`) defaulting to the existing `../newsletters/` path.

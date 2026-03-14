@@ -526,28 +526,6 @@ const App = (() => {
   }
 
   // -----------------------------------------------------------
-  // Random Email Navigation
-  // -----------------------------------------------------------
-
-  /** Load manifest, pick a random email, and redirect to the viewer */
-  async function loadAndNavigateRandom() {
-    try {
-      const data = await loadManifest();
-      if (!data.emails || data.emails.length === 0) {
-        throw new Error("No emails found in manifest");
-      }
-      const email = data.emails[Math.floor(Math.random() * data.emails.length)];
-      window.location.replace(viewerUrl(email.file, email.newsletter));
-    } catch (err) {
-      console.error("Failed to load random email:", err);
-      const main = document.querySelector("main");
-      if (main) {
-        main.innerHTML = `<div class="empty-state">Failed to load a random email. <a href="index.html">Go home</a></div>`;
-      }
-    }
-  }
-
-  // -----------------------------------------------------------
   // Utility
   // -----------------------------------------------------------
 
@@ -593,6 +571,5 @@ const App = (() => {
     initViewer,
     initBookmarks,
     initKeyboard,
-    loadAndNavigateRandom,
   };
 })();

@@ -173,7 +173,6 @@ a:hover {
   gap: var(--sp-4);
 }
 
-.header__random,
 .header__bookmarks {
   font-size: 12px;
   color: var(--fg-muted);
@@ -183,7 +182,6 @@ a:hover {
   transition: color 150ms var(--ease);
 }
 
-.header__random:hover,
 .header__bookmarks:hover {
   color: var(--accent);
 }
