@@ -470,7 +470,7 @@ const App = (() => {
   let previewActive = 0;
 
   const PREVIEW_MAX_CONCURRENT = 4;
-  const PREVIEW_HOVER_DELAY_MS = 2000; // per user spec: "more than two seconds"
+  const PREVIEW_HOVER_DELAY_MS = 1400;
   const PREVIEW_SHORT_CHARS = 160;
   const PREVIEW_LONG_CHARS = 500;
 

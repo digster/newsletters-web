@@ -43,3 +43,9 @@ Add a dark mode switcher on the top right of the home page.
 ## 2026-04-24: Inline Preview + Hover Tooltip in Newsletter List
 
 Inside a newsletter list there should be a preview next to the subject (Gmail-style muted snippet after an em-dash). Also, a preview of the first few lines should be shown in a tooltip when we hover for more than two seconds.
+
+## 2026-05-13: Tune Hover Preview Delay to 1.4s
+
+How much is the hover preview time currently configured for?
+
+Set the hover delay to 1400 ms.
