@@ -2,7 +2,7 @@
 
 ## Overview
 
-Newsletter Archive is a static site generator + client-side app for browsing ~14,000 email newsletters. It follows a "build once, render client-side" pattern with zero runtime dependencies.
+Newsletter Archive is a static site generator + client-side app for browsing ~17,000 email newsletters. It follows a "build once, render client-side" pattern with zero runtime dependencies.
 
 ## Data Flow
 
@@ -10,16 +10,23 @@ Newsletter Archive is a static site generator + client-side app for browsing ~14
 Source repo (../newsletters/)     Build script              GitHub Pages
   newsletters/                     scripts/build_site.py      Served as static files
     {name}/                          |
-      {hash}/                        +-> emails/{name}/{hash}/{hash}.html  (copied HTML)
-        {hash}.html                  +-> data/index.json                   (manifest)
-        {hash}.md (metadata)         +-> index.html, newsletter.html, ...  (templates)
-        {hash}.txt
+      {hash}/                        +-> emails/{name}/{hash}/{hash}.html  (copied, or
+        {hash}.html                  |                                      rendered from .md)
+        {hash}.md (metadata + body)  +-> data/index.json                   (manifest)
+        {hash}.txt                   +-> index.html, newsletter.html, ...  (templates)
 ```
 
-1. Build script walks `../newsletters/`, parses YAML front matter from `.md` files
-2. Copies only `.html` files to `emails/` (no `.md` or `.txt` — keeps size manageable)
+1. `collect_emails()` walks `../newsletters/`, parses YAML front matter from `.md` files,
+   and picks the body for each email: the `.html` file if there is one, otherwise the `.md`
+2. `write_emails()` materializes that list — copying real HTML verbatim, rendering
+   markdown-only emails into generated HTML pages. `.txt` is never used as a body
 3. Generates `data/index.json` with all email metadata (subject, from, date, file path)
 4. Copies template files to repo root
+
+Collection and writing are driven by a **single walk**: `collect_emails()` returns records
+carrying internal `_source` / `_rel` keys, and `write_emails()` consumes that list rather
+than re-walking the tree. This is what guarantees every manifest path exists on disk — with
+two independent walks, a source file the two disagreed about would produce a dead link.
 
 ## Key Design Decisions
 
@@ -27,12 +34,49 @@ Source repo (../newsletters/)     Build script              GitHub Pages
 - **Client-side rendering**: `index.json` manifest is loaded once, then all navigation/search is client-side. No server needed.
 - **Iframe email viewer**: Original HTML emails are loaded in sandboxed iframes to prevent CSS conflicts and preserve original formatting.
 - **Repo root deployment**: Built files go directly to repo root (not `dist/`). The entire repo is deployed as a static site via GitHub Pages.
-- **Git LFS for emails**: The 13,652 HTML email files (~883 MB) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
+- **Git LFS for emails**: The 16,989 HTML email files (~1.1 GB, including the 400 generated from markdown) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
+
+### Markdown Fallback for HTML-less Emails
+
+The upstream ingestor writes no `.html` file when HTML extraction fails, falling back to the
+plain-text body in the `.md`. The build script used to `continue` past those directories,
+silently dropping them — 400 emails, all in `Quincy`, which reduced a nine-year newsletter to
+4 visible entries.
+
+Those emails now render from their `.md` body instead:
+
+- **`render_markdown()`** is a deliberately small stdlib converter (no PyYAML, no markdown
+  dependency — matching the hand-rolled front-matter parser). It handles paragraphs, ordered
+  and unordered lists, bare-URL autolinking, headings, `[text](url)` links, emphasis, code,
+  blockquotes and rules. It is not, and does not try to be, CommonMark.
+- **Escaping runs first.** Email bodies are untrusted, so `html.escape` is applied before any
+  link or emphasis pass; nothing downstream can inject markup, and URLs are already safe to
+  place in an `href`. Only `http:`, `https:` and `mailto:` schemes are emitted.
+- **Already-rendered fragments are "parked"** behind NUL-delimited placeholders. Code spans
+  are parked before emphasis so their contents stay literal, and anchors are parked before
+  the autolink pass so a URL wrapped by `[text](url)` cannot be linked a second time.
+- **A blank line does not close a list.** Every one of these bodies separates its numbered
+  items with one; flushing eagerly emitted an `<ol>` per item and rendered "1. 1. 1.".
+- **Generated pages carry no subject header.** Real HTML emails have none, the viewer chrome
+  already shows subject and date, and a header would prepend duplicate subject text to every
+  inline preview, since `extractPreviewText` walks the whole document.
+- **Light-only styling**, because `.viewer-frame` is hardcoded to a white background and all
+  copied emails render light — a dark variant would make these 400 the odd ones out.
+- The generated file is named `{message_id}.html` after the sibling `.txt` stem, matching the
+  convention real HTML emails use. That path doubles as the localStorage key for read and
+  bookmark state, so it must stay stable once deployed.
+
+Tests live in `scripts/test_build_site.py` (stdlib `unittest`, no dependencies):
+
+```bash
+python3 -m unittest discover -s scripts -p "test_*.py" -v
+```
 
 ## File Structure
 
 ```
 scripts/build_site.py       # Build script (reads source, generates output)
+scripts/test_build_site.py  # Tests for the renderer and collection fallback
 templates/                   # Source templates (copied to root on build)
   index.html                 # Homepage template
   newsletter.html            # Newsletter listing template

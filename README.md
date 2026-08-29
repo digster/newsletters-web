@@ -1,11 +1,12 @@
 # Newsletter Archive
 
-A browsable GitHub Pages site for ~14,000 newsletter emails across 65+ sources.
+A browsable GitHub Pages site for ~17,000 newsletter emails across 65+ sources.
 
 ## How It Works
 
 - **Source data**: The `newsletters/` repo contains raw email files (HTML, MD, TXT) organized by newsletter name and hash prefix
-- **Build script**: `scripts/build_site.py` reads the source repo, extracts metadata from YAML front matter in `.md` files, copies `.html` email files, and generates a JSON manifest
+- **Build script**: `scripts/build_site.py` reads the source repo, extracts metadata from YAML front matter in `.md` files, materializes one HTML file per email, and generates a JSON manifest
+- **Markdown fallback**: emails that ship an `.html` body are copied verbatim. Emails with no `.html` (the ingestor writes none when HTML extraction fails) are rendered from their `.md` body instead, so they still appear on the site
 - **Static site**: Pure HTML/CSS/JS with no build tools or frameworks. Client-side JS loads the manifest and renders navigation
 
 ## Prerequisites
@@ -29,9 +30,17 @@ python scripts/build_site.py
 ```
 
 This reads from `../newsletters/` and outputs:
-- `emails/` — copied HTML email files
+- `emails/` — one HTML file per email (copied, or rendered from markdown)
 - `data/index.json` — manifest with metadata for all emails
 - `index.html`, `newsletter.html`, `view.html`, `style.css`, `app.js` — site templates
+
+### Run tests
+
+```bash
+python3 -m unittest discover -s scripts -p "test_*.py" -v
+```
+
+Stdlib `unittest`, no dependencies to install.
 
 ### Serve locally
 

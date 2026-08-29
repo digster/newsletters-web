@@ -49,3 +49,7 @@ Inside a newsletter list there should be a preview next to the subject (Gmail-st
 How much is the hover preview time currently configured for?
 
 Set the hover delay to 1400 ms.
+
+## 2026-08-29: Markdown Fallback for HTML-less Emails
+
+The newsletter setup script skips an email from the source if an HTML version is not available. Use the markdown version if it's available when HTML version is not available.
