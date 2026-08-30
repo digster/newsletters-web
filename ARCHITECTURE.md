@@ -191,3 +191,16 @@ Row structure:
   </span>
 </a>
 ```
+
+### Backfilled articles use `web-` IDs
+
+The `{hash}` directory name is not always a Gmail message ID. Articles scraped from a
+publication's web archive by `ingestor-tui`'s backfill feature are named
+`web-<sha256(canonical_url)[:16]>` — e.g. `web-4d77605a905cdfc5` — and their front matter
+carries `origin: backfill` plus a `source_url:`.
+
+The build treats them like any other email: the directory holds exactly one `.md` and one
+`.html`, so `collect_emails()` picks the HTML body and emits one manifest record. They have
+no `.txt`, which is already never used as a body. `parse_front_matter` ignores the two extra
+keys. No change is needed here; this note exists so a `web-` prefix is not mistaken for
+corruption.
