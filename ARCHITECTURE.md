@@ -34,7 +34,7 @@ two independent walks, a source file the two disagreed about would produce a dea
 - **Client-side rendering**: `index.json` manifest is loaded once, then all navigation/search is client-side. No server needed.
 - **Iframe email viewer**: Original HTML emails are loaded in sandboxed iframes to prevent CSS conflicts and preserve original formatting.
 - **Repo root deployment**: Built files go directly to repo root (not `dist/`). The entire repo is deployed as a static site via GitHub Pages.
-- **Git LFS for emails**: The 16,989 HTML email files (~1.1 GB, including the 400 generated from markdown) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
+- **Git LFS for emails**: The 17,006 HTML email files (~1.1 GB, including the 400 generated from markdown) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
 
 ### Markdown Fallback for HTML-less Emails
 
@@ -77,6 +77,7 @@ python3 -m unittest discover -s scripts -p "test_*.py" -v
 ```
 scripts/build_site.py       # Build script (reads source, generates output)
 scripts/test_build_site.py  # Tests for the renderer and collection fallback
+scripts/test_key_migration.mjs # Tests for the localStorage key migration (node --test)
 templates/                   # Source templates (copied to root on build)
   index.html                 # Homepage template
   newsletter.html            # Newsletter listing template
@@ -88,6 +89,53 @@ data/index.json              # Generated manifest (all email metadata)
 emails/                      # Copied HTML email files
 .github/workflows/deploy.yml # GitHub Pages deployment
 ```
+
+## Email Identity & Paths
+
+Every email is addressed by its **full 16-char Gmail message ID**:
+
+```
+emails/{newsletter}/{message_id}/{message_id}.html
+```
+
+The middle segment used to be an 8-char truncation of that ID. Gmail message IDs
+are time-ordered rather than hashed, so those prefixes collided for emails
+delivered close together, and the upstream organizer's prefix-based raw-file
+lookup copied *both* emails' bodies into *both* directories. Because
+`collect_emails()` produces one record per directory and picks
+`sorted(html_files)[0]`, the result was 5 emails published with the wrong body
+under the right headline, and 1 dropped entirely. A further 16 never appeared at
+all (unparseable front matter upstream).
+
+Fixed at the source, so this repo's job is to keep the invariant visible:
+
+- **One directory is one email.** `collect_emails()` now logs a warning when a
+  directory holds more than one `.html` or `.md`. The deterministic
+  `sorted(...)[0]` pick remains, so builds stay reproducible, but the condition
+  is a defect to fix upstream rather than something absorbed silently.
+- **`hash` is the full message ID**, and equals both the directory name and the
+  filename stem for every record.
+
+### The `file` path is a storage key (and it moved once)
+
+`file` doubles as the localStorage key for read state and bookmarks, so renaming
+output files orphans user state. The move to full IDs was a repo-wide rename of
+16,989 paths, handled by a one-time client-side migration in `app.js`
+(`KeyMigration`).
+
+The new key is derivable from the old one with no lookup, because the old path
+already embedded the full ID in its filename: **replace the middle path segment
+with the filename's stem.** It is guarded by a version flag (`nl_key_schema`),
+idempotent by construction, and writes the flag last so a failure retries rather
+than half-applying.
+
+Validated against all 16,989 live keys: 16,984 map onto a real new key. The
+other 5 are the wrong-body records — their old key embeds a *different* email's
+ID, which no string rule can invert — so they go inert. Dropping a read mark on
+a page that displayed the wrong body is the correct outcome.
+
+**The migration is permanent.** It must keep running for browsers that have not
+visited since the rename.
 
 ## Client-Side Architecture
 

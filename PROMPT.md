@@ -53,3 +53,14 @@ Set the hover delay to 1400 ms.
 ## 2026-08-29: Markdown Fallback for HTML-less Emails
 
 The newsletter setup script skips an email from the source if an HTML version is not available. Use the markdown version if it's available when HTML version is not available.
+
+## 2026-08-29: Rebuild for Full Gmail Message IDs
+
+Regenerate `data/index.json` and `emails/` from the rebuilt `../newsletters`, and
+add a one-time localStorage migration. The `file` field doubles as the key for
+the `nl_bookmarks` set and read state in `app.js`; new keys are derivable from
+old ones entirely client-side, because the old key already embeds the full
+message ID in its `.html` filename (rewrite the middle path segment to the
+`.html` stem). Guard it with a version flag. Prefer `git mv` over `rm -rf` +
+re-add. Add a build_site regression test for a directory containing two `.html`
+files.

@@ -437,6 +437,7 @@ def collect_emails(source_dir: Path) -> list[dict]:
     skipped = 0
     from_markdown = 0
     unusable = 0
+    ambiguous = 0
 
     newsletter_dirs = sorted(
         [d for d in source_dir.iterdir() if d.is_dir() and not d.name.startswith(".")],
@@ -452,11 +453,25 @@ def collect_emails(source_dir: Path) -> list[dict]:
             if not hash_dir.is_dir():
                 continue
 
-            # sorted() because glob returns filesystem order, and a handful of
-            # directories hold more than one .html/.md — the pick must be stable
-            # across machines and rebuilds.
+            # sorted() because glob returns filesystem order — the pick must be
+            # stable across machines and rebuilds.
             md_files = sorted(hash_dir.glob("*.md"))
             html_files = sorted(hash_dir.glob("*.html"))
+
+            # One directory is one email. More than one body means the upstream
+            # organizer merged distinct emails into a single directory, which is
+            # exactly the truncated-message-id collision that used to publish one
+            # newsletter's body under another's headline. The sorted pick below
+            # still keeps the build deterministic, but this condition is now a
+            # defect upstream rather than something to absorb quietly.
+            if len(html_files) > 1 or len(md_files) > 1:
+                ambiguous += 1
+                log.warning(
+                    "%s holds %d .html and %d .md files — expected exactly one "
+                    "email per directory; using %s",
+                    hash_dir, len(html_files), len(md_files),
+                    (html_files or md_files)[0].name,
+                )
 
             # Parse metadata first: it lives in the .md file and is recoverable
             # whether or not an HTML body exists.
@@ -518,6 +533,10 @@ def collect_emails(source_dir: Path) -> list[dict]:
         log.info("Rendered %d emails from markdown (no HTML version available)", from_markdown)
     if unusable:
         log.warning("Skipped %d emails with neither an .html nor an .md body", unusable)
+    if ambiguous:
+        log.warning(
+            "%d directories held more than one email body — the source tree needs "
+            "rebuilding with full message IDs", ambiguous)
     if skipped:
         log.warning("Skipped %d files due to parse errors", skipped)
 

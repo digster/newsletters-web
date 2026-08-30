@@ -75,6 +75,86 @@ const App = (() => {
   };
 
   // -----------------------------------------------------------
+  // One-time localStorage key migration (truncated dir -> full message id)
+  //
+  // Read and bookmark state is keyed by the manifest's `file` path. That path
+  // changed when the ingestor stopped truncating Gmail message IDs:
+  //
+  //   before  emails/{newsletter}/{id:0..8}/{id}.html
+  //   after   emails/{newsletter}/{id}/{id}.html
+  //
+  // The full ID was always present in the filename, so the new key is derivable
+  // from the old one entirely client-side — replace the middle path segment
+  // with the filename's stem. No manifest lookup, no network, no server state.
+  //
+  // Guarded by a version flag so it runs once per browser, and idempotent by
+  // construction anyway: a key whose directory already equals its stem is
+  // passed through untouched.
+  //
+  // Known limitation: a handful of old keys (5 of ~17k) addressed a body that
+  // belonged to a *different* email — the truncated-ID collision copied the
+  // wrong .html into the directory and the build published it. Their real ID
+  // appears nowhere in the old key, so no string rule can recover it and they
+  // simply go inert. Dropping a read mark on a page that showed the wrong body
+  // is the correct outcome rather than a loss.
+  // -----------------------------------------------------------
+
+  const KeyMigration = {
+    FLAG: "nl_key_schema",
+    VERSION: "2",
+    KEYS: ["nl_read", "nl_bookmarks"],
+
+    /** emails/News/1a2b3c4d/1a2b3c4d5e6f7890.html
+     *    -> emails/News/1a2b3c4d5e6f7890/1a2b3c4d5e6f7890.html */
+    rewrite(key) {
+      if (typeof key !== "string") return key;
+      // Newsletter names never contain "/", so the shape is exactly 4 segments.
+      const parts = key.split("/");
+      if (parts.length !== 4 || parts[0] !== "emails" || !parts[3].endsWith(".html")) {
+        return key;
+      }
+      const dir = parts[2];
+      const stem = parts[3].slice(0, -".html".length);
+      // Only rewrite a genuine truncation: the directory must be a strict
+      // prefix of the stem. Anything else (already migrated, or unrecognised)
+      // is left exactly as it is.
+      if (dir === stem || !stem.startsWith(dir)) return key;
+      parts[2] = stem;
+      return parts.join("/");
+    },
+
+    run() {
+      try {
+        if (localStorage.getItem(this.FLAG) === this.VERSION) return;
+
+        for (const key of this.KEYS) {
+          const raw = localStorage.getItem(key);
+          if (!raw) continue;
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            continue;  // corrupt entry: leave it for Store's own fallback
+          }
+          if (!Array.isArray(parsed)) continue;
+          // Set() collapses any two old keys that map onto the same new one.
+          const migrated = [...new Set(parsed.map(f => this.rewrite(f)))];
+          localStorage.setItem(key, JSON.stringify(migrated));
+        }
+
+        // Written last: if anything above throws, the flag stays unset and the
+        // migration is retried on the next load rather than half-applied.
+        localStorage.setItem(this.FLAG, this.VERSION);
+      } catch {
+        /* localStorage unavailable (private mode, quota) — leave state alone */
+      }
+    },
+  };
+
+  // Runs at script load, before any init*() can read through Store's cache.
+  KeyMigration.run();
+
+  // -----------------------------------------------------------
   // Theme Management (three-state: system / light / dark)
   // -----------------------------------------------------------
 
@@ -1001,6 +1081,7 @@ const App = (() => {
   // -----------------------------------------------------------
 
   return {
+    KeyMigration,
     initHomepage,
     initNewsletter,
     initViewer,

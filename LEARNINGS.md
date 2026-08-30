@@ -17,6 +17,22 @@ adding a manifest field means touching the client, which means touching both cop
 as does the `data-file` attribute. Renaming an output file orphans a user's read and
 bookmark state for that email. Output filenames are effectively permanent once deployed.
 
+This was tested for real on 2026-08-29, when all 16,989 paths moved from an 8-char
+directory segment to the full message ID. It was survivable **only** because the old key
+already contained the full ID in its filename, making the new key derivable client-side
+with no lookup and no server state (`KeyMigration` in `app.js`). Had the old path not
+carried that information, there would have been no way to migrate the state at all.
+
+Two rules follow:
+
+- **Keep an email's identity inside its own filename**, not only in the directory around
+  it. The filename is what survives a reorganisation.
+- **A key migration is permanent code.** It cannot be removed on a later cleanup pass —
+  a browser that has not visited since the rename still holds the old keys.
+
+Note the migration could not be perfect: 5 old keys embedded a *different* email's ID (see
+below), which no string rule can invert. Those went inert.
+
 ## Independent tree walks drift
 
 `collect_emails()` (which decides manifest paths) and the old `copy_html_emails()` (which
@@ -55,3 +71,59 @@ fails, so a "markdown" body is often just hard-wrapped plain text. Two consequen
 `extractPreviewText()` in `app.js` walks the entire document to build the inline preview and
 hover tooltip. Anything at the top of the page — including a subject heading — is prepended
 to every preview snippet. Real HTML emails have no header; generated pages must match.
+
+## A silent wrong-body bug hid behind `sorted(...)[0]`
+
+`collect_emails()` picks `sorted(html_files)[0]` for determinism. That is correct, but for
+a long time it was also load-bearing in a way nobody intended.
+
+Upstream, `newsletters/` directories were named by an 8-char truncation of the Gmail
+message ID. Those IDs are time-ordered rather than hashed, so newsletters delivered minutes
+apart collided, and the organizer's prefix-based raw-file lookup copied **both** emails'
+bodies into **both** directories:
+
+```
+newsletters/Byrne/19731332/
+    197313327f3340f8.html      <- Tyler Cowen's body
+    1973133282ce4b60.html      <- Byrne's own body
+    democratizing-..._19731332.md
+```
+
+One record per directory, `sorted(...)[0]`, and Byrne's headline shipped with Tyler Cowen's
+body. Five emails were published this way and one was dropped entirely — with **zero**
+warnings, in either repo, for months.
+
+The deeper lesson is not about IDs. `sorted(...)[0]` quietly turned "there are two
+candidates here, which is impossible" into a successful build. Where a data invariant
+exists, assert it rather than picking a winner: `collect_emails()` now warns when a
+directory holds more than one body, and the test suite covers both the ambiguous case and
+the clean one (a warning nothing ever triggers is worthless, so the silent case is tested
+too).
+
+## Absence has no symptom
+
+16 Psmith emails were missing from the site for months. Nothing was broken: no dead link,
+no failed build, no console error. A malformed `from:` header upstream made their front
+matter unparseable, the organizer skipped them, and they simply never existed downstream.
+
+Manifest counts are the only thing that would have caught it. After a rebuild, reconcile
+`total_emails` against the source (`find ../newsletters -mindepth 2 -maxdepth 2 -type d |
+wc -l`) rather than trusting that the build "succeeded".
+
+## Renaming 17k LFS files: use the index, not `git mv`
+
+Git stores no rename information — renames are detected at diff time by content
+similarity. So a mass rename produces an identical commit whether you `git mv`, or delete
+and re-add. Only the cost differs.
+
+`git mv` preserves the index entry (blob hash and all) without re-reading the file, which
+avoids pushing 1.1 GB back through the LFS clean filter. But it rewrites the entire index
+on every invocation — measured at ~60 ms each, so ~17 minutes for 17k files.
+
+`git update-index --index-info` applies the same index edit in **one** pass: re-register
+each blob at its new path with the same mode and SHA, drop the old path. Seconds instead of
+minutes, with `git mv` semantics. Verify with `git diff --cached -M --name-status` — every
+unchanged file should report `R100`.
+
+For the 2026-08-29 rename that gave 16,984 pure renames, 5 rename+modify (the wrong-body
+corrections) and 17 additions, for exactly 22 new objects.

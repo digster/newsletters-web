@@ -278,6 +278,84 @@ class TestCollectEmails(unittest.TestCase):
         self.assertEqual(set(public), set(build_site.MANIFEST_KEYS))
         self.assertFalse([k for k in public if k.startswith("_")])
 
+    # --- Multiple bodies in one directory (the truncated-message-id bug) ---
+    #
+    # Under the old {message_id[:8]} naming, two emails delivered minutes apart
+    # shared a directory and the raw-file prefix match copied BOTH bodies into
+    # it. build_site then produced one record per directory, so one newsletter's
+    # body was published under another newsletter's headline. The source tree is
+    # now keyed by the full message id, so these must not recur — but the build
+    # still has to behave deterministically and say so loudly if they do.
+
+    def _two_html_dir(self):
+        """A directory holding two emails' HTML bodies, as the old bug produced."""
+        d = self.root / "Tyler Cowen" / "1953e3be"
+        d.mkdir(parents=True)
+        (d / "1953e3be34f4d721.html").write_text("<p>its happening</p>", encoding="utf-8")
+        (d / "1953e3bed494d90c.html").write_text("<p>assorted links</p>", encoding="utf-8")
+        (d / "its-happening_1953e3be.md").write_text(FRONT_MATTER + "body", encoding="utf-8")
+        return d
+
+    def test_two_html_files_yield_one_record_deterministically(self):
+        self._two_html_dir()
+        with self.assertLogs(build_site.log, level="WARNING"):
+            records = build_site.collect_emails(self.root)
+        # One directory still means one record, and the pick is the sorted
+        # first — stable across machines, filesystems and rebuilds.
+        self.assertEqual(len(records), 1)
+        self.assertEqual(
+            records[0]["file"],
+            "emails/Tyler Cowen/1953e3be/1953e3be34f4d721.html",
+        )
+
+    def test_two_html_files_are_reported_not_absorbed(self):
+        d = self._two_html_dir()
+        with self.assertLogs(build_site.log, level="WARNING") as captured:
+            build_site.collect_emails(self.root)
+        joined = "\n".join(captured.output)
+        self.assertIn(str(d), joined)
+        self.assertIn("exactly one", joined)
+
+    def test_two_markdown_files_are_reported(self):
+        """The same collision also left two .md files in one directory."""
+        d = self.root / "Tyler Cowen" / "1953e3be"
+        d.mkdir(parents=True)
+        (d / "1953e3be34f4d721.html").write_text("<p>x</p>", encoding="utf-8")
+        (d / "its-happening_1953e3be.md").write_text(FRONT_MATTER + "a", encoding="utf-8")
+        (d / "tuesday-assorted-links_1953e3be.md").write_text(FRONT_MATTER + "b", encoding="utf-8")
+        with self.assertLogs(build_site.log, level="WARNING") as captured:
+            records = build_site.collect_emails(self.root)
+        self.assertEqual(len(records), 1)
+        self.assertIn("2 .md", "\n".join(captured.output))
+
+    def test_single_body_directory_warns_about_nothing(self):
+        """The clean case must stay silent, or the warning is worthless."""
+        make_email(self.root, "News", "1953e3be34f4d721",
+                   html="<p>x</p>", md=FRONT_MATTER + "body", txt="body")
+        with self.assertNoLogs(build_site.log, level="WARNING"):
+            build_site.collect_emails(self.root)
+
+    def test_full_message_id_directories_stay_separate(self):
+        """The fixed layout: one directory per full message id, one body each."""
+        for mid, slug in (("1953e3be34f4d721", "its-happening"),
+                          ("1953e3bed494d90c", "tuesday-assorted-links")):
+            d = self.root / "Tyler Cowen" / mid
+            d.mkdir(parents=True)
+            (d / f"{mid}.html").write_text(f"<p>{slug}</p>", encoding="utf-8")
+            (d / f"{slug}_{mid}.md").write_text(FRONT_MATTER + slug, encoding="utf-8")
+
+        with self.assertNoLogs(build_site.log, level="WARNING"):
+            records = build_site.collect_emails(self.root)
+
+        self.assertEqual(len(records), 2)
+        self.assertEqual(
+            sorted(r["file"] for r in records),
+            ["emails/Tyler Cowen/1953e3be34f4d721/1953e3be34f4d721.html",
+             "emails/Tyler Cowen/1953e3bed494d90c/1953e3bed494d90c.html"],
+        )
+        # Distinct hashes, so read/bookmark state cannot alias between them.
+        self.assertEqual(len({r["hash"] for r in records}), 2)
+
     def test_manifest_contains_no_internal_keys(self):
         make_email(self.root, "News", "aaaa1111", html="<p>x</p>")
         make_email(self.root, "Quincy", "bbbb2222", md=FRONT_MATTER + "b", txt="b")
