@@ -64,3 +64,7 @@ message ID in its `.html` filename (rewrite the middle path segment to the
 `.html` stem). Guard it with a version flag. Prefer `git mv` over `rm -rf` +
 re-add. Add a build_site regression test for a directory containing two `.html`
 files.
+
+## 2026-09-02
+
+> why are some quotes in newsletter listing headers getting escaped? sometimes they do, sometimes don't.

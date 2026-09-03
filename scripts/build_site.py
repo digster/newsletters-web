@@ -59,14 +59,69 @@ log = logging.getLogger("build")
 
 FRONT_MATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
 
-# Matches key: "value" or key: value (unquoted)
+# Matches key: "value", key: 'value', or key: value (unquoted)
 YAML_LINE_RE = re.compile(
     r'^(\w[\w\s]*?):\s*'           # key
-    r'(?:"((?:[^"\\]|\\.)*)"|'     # double-quoted value
-    r"'((?:[^'\\]|\\.)*)'|"        # single-quoted value
+    r'(?:"((?:[^"\\]|\\.)*)"|'     # double-quoted value (backslash escapes)
+    r"'((?:[^']|'')*)'|"            # single-quoted value ('' escapes a quote)
     r'(.*))'                        # unquoted value
     r'\s*$'
 )
+
+# Single-character escapes a YAML double-quoted scalar may carry. The upstream
+# ingestor writes every front-matter value double-quoted, so a subject holding a
+# quote reaches us as `subject: "Why I quit \"The Strive\""`. Stripping the
+# delimiters without resolving these leaves the backslashes in the manifest,
+# where they render literally in the listing header and the viewer title.
+YAML_DQ_ESCAPES = {
+    '"': '"', "\\": "\\", "/": "/", "'": "'",
+    "n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f",
+    "a": "\a", "v": "\v", "e": "\x1b", "0": "\0", " ": " ",
+    "N": "\x85", "_": "\xa0", "L": "\u2028", "P": "\u2029",
+}
+
+# \xNN, \uNNNN and \UNNNNNNNN name a code point in a fixed count of hex digits.
+YAML_HEX_ESCAPES = {"x": 2, "u": 4, "U": 8}
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
+def unescape_double_quoted(value: str) -> str:
+    """Resolve the escape sequences inside a YAML double-quoted scalar.
+
+    An unrecognized sequence is passed through with its backslash intact. Front
+    matter comes from an upstream ingestor we do not control, so surfacing odd
+    input beats silently swallowing a character out of a subject line.
+    """
+    out = []
+    i, n = 0, len(value)
+
+    while i < n:
+        char = value[i]
+        # A trailing lone backslash escapes nothing — emit it verbatim.
+        if char != "\\" or i + 1 >= n:
+            out.append(char)
+            i += 1
+            continue
+
+        esc = value[i + 1]
+        width = YAML_HEX_ESCAPES.get(esc)
+
+        if width is not None:
+            digits = value[i + 2 : i + 2 + width]
+            # Reject anything int() would accept but YAML would not (signs,
+            # underscores, surrounding whitespace) before converting.
+            if len(digits) == width and all(c in _HEX_DIGITS for c in digits):
+                try:
+                    out.append(chr(int(digits, 16)))
+                except ValueError:          # code point above U+10FFFF
+                    out.append(value[i : i + 2 + width])
+                i += 2 + width
+                continue
+
+        out.append(YAML_DQ_ESCAPES.get(esc, char + esc))
+        i += 2
+
+    return "".join(out)
 
 
 def parse_front_matter(text: str) -> dict:
@@ -84,10 +139,15 @@ def parse_front_matter(text: str) -> dict:
         m = YAML_LINE_RE.match(line)
         if m:
             key = m.group(1).strip()
-            # Pick whichever capture group matched
-            value = m.group(2) if m.group(2) is not None else (
-                m.group(3) if m.group(3) is not None else m.group(4).strip()
-            )
+            # Pick whichever capture group matched, applying the escaping rules
+            # that belong to that quoting style: backslash escapes inside double
+            # quotes, doubled quotes inside single quotes, none when bare.
+            if m.group(2) is not None:
+                value = unescape_double_quoted(m.group(2))
+            elif m.group(3) is not None:
+                value = m.group(3).replace("''", "'")
+            else:
+                value = m.group(4).strip()
             data[key] = value
 
     return data

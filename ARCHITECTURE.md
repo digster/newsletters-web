@@ -36,6 +36,32 @@ two independent walks, a source file the two disagreed about would produce a dea
 - **Repo root deployment**: Built files go directly to repo root (not `dist/`). The entire repo is deployed as a static site via GitHub Pages.
 - **Git LFS for emails**: The 17,006 HTML email files (~1.1 GB, including the 400 generated from markdown) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
 
+### Front-Matter Escaping
+
+The upstream ingestor writes **every** front-matter value as a double-quoted YAML scalar,
+so any quote inside a subject or sender name arrives backslash-escaped:
+
+```yaml
+subject: "Why I quit \"The Strive\""
+```
+
+`parse_front_matter` therefore has to *resolve* those escapes, not merely tolerate them
+while finding the closing delimiter. `unescape_double_quoted()` handles the standard YAML
+double-quote escapes (`\"`, `\\`, `\n`, `\t`, `\xNN`, `\uNNNN`, `\UNNNNNNNN`, …) and
+passes anything unrecognized through **with its backslash intact** — front matter comes
+from a source this repo does not control, so unexpected input should stay visible rather
+than lose a character. Single-quoted scalars take the other YAML rule: `''` is a literal
+quote and backslashes are ordinary characters.
+
+This is load-bearing because `subject` flows straight into `data/index.json` and from there
+into the listing header, the viewer title and the generated pages' `<title>`. Each listing
+row also shows a body preview extracted at runtime from the email's HTML, so a parser bug
+here shows up as the *same words* rendering two different ways in one row.
+
+Note that unescaping stops at the YAML layer. A display name that genuinely contains
+quotes is encoded twice — RFC 5322 first, YAML on top — and correctly retains its RFC 5322
+backslashes after parsing. See `LEARNINGS.md`.
+
 ### Markdown Fallback for HTML-less Emails
 
 The upstream ingestor writes no `.html` file when HTML extraction fails, falling back to the

@@ -127,3 +127,35 @@ unchanged file should report `R100`.
 
 For the 2026-08-29 rename that gave 16,984 pure renames, 5 rename+modify (the wrong-body
 corrections) and 17 additions, for exactly 22 new objects.
+
+## Stripping quotes is not parsing them
+
+The front-matter parser matched a double-quoted scalar with `"((?:[^"\\]|\\.)*)"` — a
+pattern that correctly *tolerates* escape sequences so the closing quote is not mistaken
+for a delimiter, then handed the raw capture straight to the manifest. Tolerating an
+escape and resolving it are different steps, and only the first was ever written.
+
+The upstream ingestor quotes every value, so the bug fired on every subject containing a
+quote: 396 subjects rendered as `Why I quit \"The Strive\"`, plus 3,152 `from:` values.
+It stayed invisible for so long because each row shows the subject beside a body preview
+extracted at runtime via `DOMParser` — the same words, one escaped and one not, and the
+mismatch reads as a rendering quirk rather than a parse bug.
+
+If a regex has an escape-aware character class, something downstream has to unescape.
+`unescape_double_quoted()` now does, and passes unknown sequences through with the
+backslash intact: this front matter comes from an ingestor we do not control, so odd input
+should stay visible rather than lose a character.
+
+Single-quoted YAML does **not** use backslashes — it escapes a quote by doubling it. The
+old pattern applied backslash rules to both styles; they are now handled separately.
+
+## One escape layer at a time
+
+The 16 Psmith emails from "Absence has no symptom" have a display name that genuinely
+contains quotes, so their `from:` is encoded twice: RFC 5322 quotes it, then YAML escapes
+that. Unescaping the YAML layer correctly leaves `"\"Mr. and Mrs. Psmith's Bookshelf\""`.
+
+That residue is not a parser bug — decoding a mail display name is a separate concern from
+reading YAML, and `from` is not rendered anywhere in the UI. Resist the urge to keep
+stripping backslashes until they are gone; you would corrupt names that really do contain
+a quote.

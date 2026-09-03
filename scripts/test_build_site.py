@@ -412,5 +412,79 @@ class TestWriteEmails(unittest.TestCase):
         self.assertFalse(stale.exists())
 
 
+class TestParseFrontMatter(unittest.TestCase):
+    """Quoting and escaping rules for the hand-rolled front-matter parser.
+
+    Every value the upstream ingestor writes is double-quoted, so subjects that
+    contain a quote arrive escaped. Leaving those backslashes in place put a
+    literal \\" into the listing header for 396 emails.
+    """
+
+    @staticmethod
+    def parse(*lines):
+        return build_site.parse_front_matter(
+            "---\n" + "\n".join(lines) + "\n---\n"
+        )
+
+    def test_escaped_quotes_are_unescaped(self):
+        data = self.parse(r'subject: "Why I quit \"The Strive\""')
+        self.assertEqual(data["subject"], 'Why I quit "The Strive"')
+
+    def test_quote_at_the_start_of_a_subject(self):
+        data = self.parse(r'subject: "\"Collaboration\" is bullshit."')
+        self.assertEqual(data["subject"], '"Collaboration" is bullshit.')
+
+    def test_plain_values_are_untouched(self):
+        data = self.parse('subject: "The Hacker News tarpit"')
+        self.assertEqual(data["subject"], "The Hacker News tarpit")
+
+    def test_apostrophes_need_no_escaping(self):
+        data = self.parse(r'subject: "OpenAI\'s \"Planning For AGI\""')
+        self.assertEqual(data["subject"], 'OpenAI\'s "Planning For AGI"')
+
+    def test_escaped_backslash_collapses_to_one(self):
+        data = self.parse(r'subject: "C:\\\\Users"')
+        self.assertEqual(data["subject"], r"C:\\Users")
+
+    def test_control_and_unicode_escapes(self):
+        data = self.parse(r'subject: "a\tb\u00e9c"')
+        self.assertEqual(data["subject"], "a\tb\u00e9c")
+
+    def test_unknown_escape_is_left_alone(self):
+        # \q is not a YAML escape; keep the input visible rather than eat the q.
+        data = self.parse(r'subject: "a\qb"')
+        self.assertEqual(data["subject"], r"a\qb")
+
+    def test_malformed_hex_escape_is_left_alone(self):
+        data = self.parse(r'subject: "a\uZZZZb"')
+        self.assertEqual(data["subject"], r"a\uZZZZb")
+
+    def test_escaped_backslash_does_not_eat_the_closing_quote(self):
+        # The value pattern must consume \\ as one unit, or the closing " of a
+        # subject ending in a backslash would be swallowed and the line would
+        # fall through to the unquoted branch.
+        data = self.parse(r'subject: "ends with \\"')
+        self.assertEqual(data["subject"], "ends with \\")
+
+    def test_lone_trailing_backslash_is_emitted_verbatim(self):
+        # Defensive: the line regex cannot produce this, but the unescaper is
+        # the piece that would otherwise index past the end of the string.
+        self.assertEqual(build_site.unescape_double_quoted("a\\"), "a\\")
+
+    def test_single_quoted_value_doubles_its_quotes(self):
+        # YAML single-quoted scalars escape a quote by doubling it, and treat a
+        # backslash as an ordinary character.
+        data = self.parse("subject: 'It''s a path C:\\n'")
+        self.assertEqual(data["subject"], "It's a path C:\\n")
+
+    def test_unquoted_value_is_taken_literally(self):
+        data = self.parse("date: 2021-08-19 10:00:00")
+        self.assertEqual(data["date"], "2021-08-19 10:00:00")
+
+    def test_colon_inside_a_quoted_subject(self):
+        data = self.parse(r'subject: "Spyglass: the \"Amateur City\""')
+        self.assertEqual(data["subject"], 'Spyglass: the "Amateur City"')
+
+
 if __name__ == "__main__":
     unittest.main()
