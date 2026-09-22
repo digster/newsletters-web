@@ -159,3 +159,35 @@ That residue is not a parser bug — decoding a mail display name is a separate 
 reading YAML, and `from` is not rendered anywhere in the UI. Resist the urge to keep
 stripping backslashes until they are gone; you would corrupt names that really do contain
 a quote.
+
+## A sandboxed iframe breaks links in two different ways
+
+The viewer's iframe was sandboxed with only `allow-same-origin`. That looked harmless for
+static emails, but it broke every link:
+
+- A link **without** a target navigates the iframe itself. Most publishers send
+  `X-Frame-Options: DENY` (or CSP `frame-ancestors`), so the click ends on "refused to
+  connect" instead of the article.
+- A link **with** `target="_blank"` is silently dropped, because the sandbox lacks
+  `allow-popups`. No error, no console message.
+
+Fixing it needs both halves: sandbox tokens that permit a new tab, and a runtime pass
+(`EmailLinks` in `app.js`) that gives every link an explicit target.
+
+Two traps along the way:
+
+- **`allow-popups-to-escape-sandbox` widens what a link can do.** Retarget only
+  `http:`/`https:` links to `_blank`, and pin everything else to `_self`, including links an
+  email already marked `_blank` and links covered by a `<base target="_blank">`. Otherwise a
+  `javascript:` link would open in an unsandboxed tab on this origin.
+- **The iframe `load` event is too late.** It waits for every remote image, so links
+  retargeted on `load` are still broken for anyone who clicks the headline right away. Hook
+  the parsed document instead (`EmailLinks.whenParsed`), and keep `load` as the fallback.
+
+## The HTML/CSS templates are CRLF; `app.js` is LF
+
+`view.html`, `index.html`, `newsletter.html`, `bookmarks.html`, `style.css` (root and
+`templates/` copies) are committed with CRLF line endings, with no `.gitattributes` rule
+normalising them. Python's `Path.read_text()` / `write_text()` silently converts them to LF,
+which turns a one-line edit into a whole-file diff. Check with
+`git ls-files --eol <file>` after editing, and restore CRLF if the `w/` column changed.

@@ -216,8 +216,8 @@ def _is_safe_url(url: str) -> bool:
 def _anchor(url: str, text: str) -> str:
     """Build an anchor from already-escaped url/text.
 
-    No target="_blank": the viewer iframe is sandboxed without allow-popups, so
-    it would be ignored anyway.
+    No target="_blank": the viewer retargets every link in an email at runtime
+    (EmailLinks in app.js), so generated pages behave like copied ones.
     """
     return f'<a href="{url}" rel="noopener noreferrer">{text}</a>'
 

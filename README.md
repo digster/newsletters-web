@@ -40,7 +40,7 @@ This reads from `../newsletters/` and outputs:
 # Build script (Python, stdlib unittest)
 python3 -m unittest discover -s scripts -p "test_*.py" -v
 
-# localStorage key migration in app.js (Node's built-in runner)
+# app.js: localStorage key migration + email link retargeting (Node's built-in runner)
 node --test scripts/*.mjs
 ```
 
@@ -61,7 +61,7 @@ python -m http.server 8000
 |------|-----|-------------|
 | Homepage | `index.html` | Card grid of all newsletters with search |
 | Newsletter | `newsletter.html?name=Not+Boring` | Date-sorted email list for a newsletter |
-| Viewer | `view.html?file=emails/...&newsletter=...` | Email rendered in iframe with prev/next nav |
+| Viewer | `view.html?file=emails/...&newsletter=...` | Email rendered in a sandboxed iframe with prev/next nav; links in the email open in a new tab |
 
 ## Deployment
 

@@ -68,3 +68,8 @@ files.
 ## 2026-09-02
 
 > why are some quotes in newsletter listing headers getting escaped? sometimes they do, sometimes don't.
+
+## 2026-09-22: Open Email Links in a New Tab
+
+> * whenever i try to click a link in the newsletter, say trying to click on the headline so that i can read it on the original newsletter page, the link tries to open inside the same frame and does not open.
+> * ideally all the clicked links should open in a new tab.
