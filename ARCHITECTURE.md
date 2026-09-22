@@ -32,7 +32,7 @@ two independent walks, a source file the two disagreed about would produce a dea
 
 - **No static site generator (Jekyll/Hugo)**: 14K HTML files already render perfectly. We only need ~70 navigation pages + 1 JSON manifest. Python stdlib handles this in ~10 seconds.
 - **Client-side rendering**: `index.json` manifest is loaded once, then all navigation/search is client-side. No server needed.
-- **Iframe email viewer**: Original HTML emails are loaded in sandboxed iframes to prevent CSS conflicts and preserve original formatting.
+- **Iframe email viewer**: Original HTML emails are loaded in sandboxed iframes to prevent CSS conflicts and preserve original formatting. Scripts stay disabled; links are retargeted to open in a new tab (see "Email Links Open in a New Tab").
 - **Repo root deployment**: Built files go directly to repo root (not `dist/`). The entire repo is deployed as a static site via GitHub Pages.
 - **Git LFS for emails**: The 17,006 HTML email files (~1.1 GB, including the 400 generated from markdown) are stored via Git LFS to keep clone size small (~4 MB pack vs 137 MB without LFS). `data/index.json` (3.1 MB) stays in regular git for delta compression and native diffing. The CI workflow caches `.git/lfs/` to minimize bandwidth usage on GitHub's free tier (1 GB/month).
 
@@ -104,6 +104,7 @@ python3 -m unittest discover -s scripts -p "test_*.py" -v
 scripts/build_site.py       # Build script (reads source, generates output)
 scripts/test_build_site.py  # Tests for the renderer and collection fallback
 scripts/test_key_migration.mjs # Tests for the localStorage key migration (node --test)
+scripts/test_email_links.mjs   # Tests for EmailLinks + the viewer iframe's sandbox (node --test)
 templates/                   # Source templates (copied to root on build)
   index.html                 # Homepage template
   newsletter.html            # Newsletter listing template
@@ -168,7 +169,7 @@ visited since the rename.
 `app.js` is organized as an IIFE module (`App`) with methods:
 - `initHomepage()` — loads manifest, renders newsletter card grid with read counts, binds search
 - `initNewsletter()` — filters manifest by newsletter name, renders date-sorted email list with read/bookmark state
-- `initViewer()` — sets iframe src, auto-marks email as read, loads prev/next navigation, bookmark toggle
+- `initViewer()` — hooks `EmailLinks`, sets iframe src, auto-marks email as read, loads prev/next navigation, bookmark toggle
 - `initBookmarks()` — loads bookmarked emails from localStorage, renders with newsletter labels and search
 - `initThemeToggle()` — initializes the theme toggle button (home page only), cycles through system/light/dark
 - `initKeyboard()` — `/` to focus search, `Escape` to blur
@@ -199,6 +200,45 @@ Each row in an email list shows a Gmail-style inline preview (`subject — muted
 6. Cache is in-memory only (page-lifetime `Map`); the browser's HTTP cache handles reuse across page navigations.
 
 The feature piggybacks on the shared `renderEmailList`, so both the newsletter listing page and the bookmarks page get previews for free.
+
+### Email Links Open in a New Tab
+
+The viewer iframe (`view.html`) is sandboxed:
+
+```html
+sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+```
+
+Each token is there for a reason, and one is deliberately missing:
+
+| Token | Why |
+|---|---|
+| *(no `allow-scripts`)* | Email bodies are untrusted and stay inert. Combined with `allow-same-origin` it would let an email remove its own sandbox — never add it. |
+| `allow-same-origin` | Lets `app.js` reach the email's DOM to retarget links. |
+| `allow-popups` | Without it, every `target="_blank"` link is silently dropped. |
+| `allow-popups-to-escape-sandbox` | The new tab runs the publisher's page normally; otherwise it inherits "no scripts" and most sites break. |
+
+Allowing popups is only half of it. A plain link still navigates *the iframe*, and most
+publishers forbid framing (`X-Frame-Options` / CSP `frame-ancestors`), so the click used to
+dead-end on "refused to connect". The email cannot fix that itself (no scripts), so
+`EmailLinks` in `app.js` rewrites every `a[href]` / `area[href]` from the parent page, giving
+each an **explicit** target so neither the email's own `target` nor a `<base target>` in its
+`<head>` decides where a click lands:
+
+- `http:` / `https:` link to another page → `target="_blank"`, `rel` gains `noopener noreferrer`
+- anything else → `target="_self"`: in-page anchors (tables of contents keep scrolling) and
+  every other scheme. The scheme allowlist is load-bearing: popups escape the sandbox, so a
+  `javascript:` link opened in a new tab could run unsandboxed on this origin. Pinned to
+  `_self` it stays inside the script-less frame, where it is inert.
+
+**Timing.** The iframe's `load` event waits for every remote image in the email, which can
+take seconds — long enough to click the headline first and hit the old bug. So
+`EmailLinks.whenParsed()` polls each animation frame until the email's document is parsed
+(`readyState` past `"loading"`, and not the frame's initial `about:blank`), with `load` as
+the fallback (rAF is paused in background tabs) and as the point where polling stops.
+
+Retargeting happens at runtime, not at build time, so the 17k LFS-tracked email files stay
+byte-identical and the 400 generated markdown pages get the same treatment for free.
 
 ### List-Level Actions (Event Delegation)
 

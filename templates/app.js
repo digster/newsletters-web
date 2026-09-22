@@ -838,6 +838,119 @@ const App = (() => {
   }
 
   // -----------------------------------------------------------
+  // Email Links (outbound links open in a new tab)
+  // -----------------------------------------------------------
+  // Emails render in an iframe sandboxed with scripts disabled (view.html).
+  // Left alone, clicking a link navigates *that iframe* — and most publishers
+  // forbid being framed (X-Frame-Options / CSP frame-ancestors), so the click
+  // dead-ends on a "refused to connect" page. Links an email already marked
+  // target="_blank" fared no better: the sandbox silently dropped them.
+  //
+  // The email cannot fix this itself (no scripts), but the viewer can, since
+  // allow-same-origin gives it the frame's DOM. Every link gets an explicit
+  // target, so neither the email's own attributes nor a <base target> in its
+  // <head> decide where a click lands:
+  //
+  //   http(s) link to another page  -> target="_blank", rel="noopener noreferrer"
+  //   anything else                 -> target="_self"
+  //
+  // "Anything else" is in-page anchors (a table of contents keeps scrolling
+  // within the email) and every other scheme. That allowlist is load-bearing:
+  // popups escape the sandbox (see view.html), so a javascript: link opened in
+  // a new tab could run unsandboxed on this origin. Pinned to _self, it stays
+  // inside the sandbox, where it is inert.
+  // -----------------------------------------------------------
+
+  const EmailLinks = {
+    NEW_TAB_PROTOCOLS: ["http:", "https:"],
+
+    /**
+     * Point every link in `doc` at an explicit target (see above).
+     * Idempotent. Returns how many links now open in a new tab.
+     */
+    retarget(doc) {
+      const here = this._withoutHash(doc.URL);
+      let newTab = 0;
+
+      for (const link of doc.querySelectorAll("a[href], area[href]")) {
+        // Resolve against baseURI rather than reading `link.href`: it honours
+        // an email's own <base href>, and works for SVG <a>, whose `href` is
+        // not a string.
+        const url = this._resolve(link.getAttribute("href"), doc.baseURI);
+        const opensNewTab = url !== null
+          && this.NEW_TAB_PROTOCOLS.includes(url.protocol)
+          && this._withoutHash(url.href) !== here;
+
+        if (opensNewTab) {
+          link.setAttribute("target", "_blank");
+          // noopener: the new tab gets no handle back to this window.
+          // noreferrer: publishers aren't told which archive page linked them.
+          link.setAttribute("rel", this._addTokens(link.getAttribute("rel"), ["noopener", "noreferrer"]));
+          newTab++;
+        } else {
+          link.setAttribute("target", "_self");
+        }
+      }
+      return newTab;
+    },
+
+    /**
+     * Call `fn(doc)` once, as soon as the iframe's email has been parsed.
+     *
+     * The iframe's `load` event waits for every remote image in the email,
+     * which can take seconds — long enough to click the headline before the
+     * links are retargeted. So poll each animation frame for a parsed document
+     * (readyState past "loading"), with `load` as the fallback: rAF is paused
+     * in background tabs, and polling must stop even if the document never
+     * becomes readable. Register before setting `src`.
+     */
+    whenParsed(iframe, fn) {
+      let done = false;
+
+      const tryRun = () => {
+        if (done) return true;
+        const doc = iframe.contentDocument;
+        // Skip the frame's initial about:blank and a document still parsing.
+        if (!doc || doc.URL === "about:blank" || doc.readyState === "loading") return false;
+        done = true;
+        fn(doc);
+        return true;
+      };
+
+      const poll = () => {
+        if (!tryRun()) requestAnimationFrame(poll);
+      };
+
+      iframe.addEventListener("load", () => {
+        tryRun();
+        done = true;  // stop polling, whether or not the document was usable
+      }, { once: true });
+      requestAnimationFrame(poll);
+    },
+
+    /** Parse `href` against `base`; null when it is not a valid URL. */
+    _resolve(href, base) {
+      try {
+        return new URL(href, base);
+      } catch {
+        return null;
+      }
+    },
+
+    _withoutHash(url) {
+      const i = url.indexOf("#");
+      return i === -1 ? url : url.slice(0, i);
+    },
+
+    /** Merge `tokens` into a space-separated attribute value, keeping order. */
+    _addTokens(value, tokens) {
+      const set = new Set((value || "").split(/\s+/).filter(Boolean));
+      tokens.forEach((t) => set.add(t));
+      return [...set].join(" ");
+    },
+  };
+
+  // -----------------------------------------------------------
   // Email Viewer
   // -----------------------------------------------------------
 
@@ -854,6 +967,10 @@ const App = (() => {
     const readBtn = document.getElementById("read-btn");
 
     if (!file || !iframe) return;
+
+    // Outbound links open in a new tab. Hooked before `src` is set so the
+    // email's document cannot be parsed before we are watching for it.
+    EmailLinks.whenParsed(iframe, (doc) => EmailLinks.retarget(doc));
 
     // Set iframe source
     iframe.src = file;
@@ -1082,6 +1199,7 @@ const App = (() => {
 
   return {
     KeyMigration,
+    EmailLinks,
     initHomepage,
     initNewsletter,
     initViewer,

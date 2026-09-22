@@ -28,7 +28,14 @@
     </div>
   </header>
 
-  <iframe class="viewer-frame" id="email-frame" sandbox="allow-same-origin" title="Email content"></iframe>
+  <!--
+    Sandbox: no allow-scripts, so email bodies stay inert. allow-same-origin
+    lets app.js (EmailLinks) retarget links; allow-popups lets them open a new
+    tab; allow-popups-to-escape-sandbox lets that tab run the publisher's page
+    normally instead of inheriting "no scripts". Never add allow-scripts here:
+    combined with allow-same-origin, an email could remove its own sandbox.
+  -->
+  <iframe class="viewer-frame" id="email-frame" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" title="Email content"></iframe>
 
   <script src="app.js"></script>
   <script>
